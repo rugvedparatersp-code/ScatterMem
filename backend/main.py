@@ -2,11 +2,12 @@
 import os
 import uuid
 from pathlib import Path
+from hmac import compare_digest
 from typing import Optional
 
 import fitz
 from docx import Document as DocxDocument
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File,Header,HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -14,6 +15,7 @@ from services.ai_service import analyse_document
 
 from database.database import (
     initialize_database,
+     get_connection,
     save_document,
     get_all_documents,
     save_findings,
@@ -64,6 +66,37 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 @app.on_event("startup")
 def startup_event():
     initialize_database()
+
+@app.post("/api/admin/reset-test-data")
+def reset_test_data(x_reset_token: str = Header(None)):
+    expected_token = os.getenv("SCATTERMEM_RESET_TOKEN")
+
+    if not expected_token or not x_reset_token:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    if not compare_digest(x_reset_token, expected_token):
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    connection = get_connection()
+
+    try:
+        connection.execute("DELETE FROM reviews")
+        connection.execute("DELETE FROM findings")
+        connection.execute("DELETE FROM documents")
+        connection.execute("DELETE FROM tasks")
+        connection.execute("DELETE FROM decisions")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise HTTPException(status_code=500, detail="Reset failed")
+    finally:
+        connection.close()
+
+    for file in UPLOAD_DIR.iterdir():
+        if file.is_file():
+            file.unlink()
+
+    return {"message": "Test data cleared successfully"}
 
 
 # --------------------------------------------------
