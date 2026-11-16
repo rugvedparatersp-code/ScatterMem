@@ -165,6 +165,13 @@ const [loginUsername, setLoginUsername] = useState("");
 const [loginPassword, setLoginPassword] = useState("");
 const [loginError, setLoginError] = useState("");
 const [loginLoading, setLoginLoading] = useState(false);
+const [authMode, setAuthMode] = useState("login"); // "login" | "register"
+const [regFullName, setRegFullName] = useState("");
+const [regUsername, setRegUsername] = useState("");
+const [regEmail, setRegEmail] = useState("");
+const [regPassword, setRegPassword] = useState("");
+const [regConfirm, setRegConfirm] = useState("");
+const [authNotice, setAuthNotice] = useState("");
 
   const [file, setFile] = useState(null);
   const [documents, setDocuments] = useState([]);
@@ -322,38 +329,100 @@ async function apiRequest(path, options = {}) {
     }
   }
 
- async function handleLogin(event) {
+async function performLogin(username, password) {
+  const response = await fetch(`${API}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: username.trim(), password }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      typeof data.detail === "string" ? data.detail : "Login failed."
+    );
+  }
+
+  localStorage.setItem("scattermem_token", data.access_token);
+  setToken(data.access_token);
+  setCurrentUser(data.user);
+}
+
+async function handleLogin(event) {
   event.preventDefault();
   setLoginLoading(true);
   setLoginError("");
+  setAuthNotice("");
 
   try {
-    const response = await fetch(`${API}/api/auth/login`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        username: loginUsername.trim(),
-        password: loginPassword,
-      }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(data.detail || "Login failed.");
-    }
-
-    localStorage.setItem("scattermem_token", data.access_token);
-    setToken(data.access_token);
-    setCurrentUser(data.user);
+    await performLogin(loginUsername, loginPassword);
     setLoginPassword("");
   } catch (err) {
     setLoginError(err.message);
   } finally {
     setLoginLoading(false);
   }
+}
+
+async function handleRegister(event) {
+  event.preventDefault();
+  setLoginError("");
+  setAuthNotice("");
+
+  if (regPassword !== regConfirm) {
+    setLoginError("Passwords do not match.");
+    return;
+  }
+
+  setLoginLoading(true);
+
+  try {
+    const response = await fetch(`${API}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: regUsername.trim(),
+        email: regEmail.trim(),
+        full_name: regFullName.trim(),
+        password: regPassword,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      let detail = data.detail;
+      if (Array.isArray(detail)) {
+        detail = detail
+          .map((d) => `${(d.loc || []).slice(-1)[0] || "field"}: ${d.msg}`)
+          .join("; ");
+      }
+      throw new Error(detail || "Could not create account.");
+    }
+
+    // Account created in the backend -> sign straight in with it
+    try {
+      await performLogin(regUsername, regPassword);
+    } catch {
+      setAuthMode("login");
+      setLoginUsername(regUsername.trim());
+      setAuthNotice("Account created. Please sign in.");
+    }
+
+    setRegPassword("");
+    setRegConfirm("");
+  } catch (err) {
+    setLoginError(err.message);
+  } finally {
+    setLoginLoading(false);
+  }
+}
+
+function switchAuthMode(mode) {
+  setAuthMode(mode);
+  setLoginError("");
+  setAuthNotice("");
 }
 
 function handleLogout() {
@@ -1375,7 +1444,30 @@ ${(report.recommended_next_actions || []).map(item =>
       </div>
     </div>
   );
-}if (!token || !currentUser) {
+}
+  if (!token || !currentUser) {
+  const isRegister = authMode === "register";
+  const inputStyle = {
+    width: "100%",
+    padding: "12px",
+    marginBottom: "18px",
+    boxSizing: "border-box",
+    borderRadius: "8px",
+    border: "1px solid #30363D",
+    background: "#0D1117",
+    color: "#F0F6FC",
+  };
+  const labelStyleAuth = { color: "#C9D1D9", display: "block", marginBottom: "8px" };
+  const linkBtnStyle = {
+    background: "none",
+    border: "none",
+    color: "#A78BFA",
+    cursor: "pointer",
+    fontWeight: "600",
+    padding: 0,
+    fontSize: "14px",
+  };
+
   return (
     <div
       style={{
@@ -1387,7 +1479,7 @@ ${(report.recommended_next_actions || []).map(item =>
       }}
     >
       <form
-        onSubmit={handleLogin}
+        onSubmit={isRegister ? handleRegister : handleLogin}
         style={{
           width: "100%",
           maxWidth: "420px",
@@ -1403,51 +1495,102 @@ ${(report.recommended_next_actions || []).map(item =>
         </h1>
 
         <p style={{ color: "#8B949E", marginBottom: "28px" }}>
-          Sign in to access your workspace.
+          {isRegister
+            ? "Create an account to access the workspace."
+            : "Sign in to access your workspace."}
         </p>
 
-        <label style={{ color: "#C9D1D9", display: "block", marginBottom: "8px" }}>
-          Username
-        </label>
+        {isRegister && (
+          <>
+            <label style={labelStyleAuth}>Full name</label>
+            <input
+              value={regFullName}
+              onChange={(e) => setRegFullName(e.target.value)}
+              placeholder="Your full name"
+              required
+              minLength={2}
+              maxLength={100}
+              style={inputStyle}
+            />
 
-        <input
-          value={loginUsername}
-          onChange={(e) => setLoginUsername(e.target.value)}
-          placeholder="Enter your username"
-          required
-          style={{
-            width: "100%",
-            padding: "12px",
-            marginBottom: "18px",
-            boxSizing: "border-box",
-            borderRadius: "8px",
-            border: "1px solid #30363D",
-            background: "#0D1117",
-            color: "#F0F6FC",
-          }}
-        />
+            <label style={labelStyleAuth}>Username</label>
+            <input
+              value={regUsername}
+              onChange={(e) => setRegUsername(e.target.value)}
+              placeholder="Choose a username (3-30 characters)"
+              required
+              minLength={3}
+              maxLength={30}
+              autoComplete="username"
+              style={inputStyle}
+            />
 
-        <label style={{ color: "#C9D1D9", display: "block", marginBottom: "8px" }}>
-          Password
-        </label>
+            <label style={labelStyleAuth}>Email</label>
+            <input
+              type="email"
+              value={regEmail}
+              onChange={(e) => setRegEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              autoComplete="email"
+              style={inputStyle}
+            />
 
-        <input
-          type="password"
-          value={loginPassword}
-          onChange={(e) => setLoginPassword(e.target.value)}
-          placeholder="Enter your password"
-          required
-          style={{
-            width: "100%",
-            padding: "12px",
-            marginBottom: "18px",
-            boxSizing: "border-box",
-            borderRadius: "8px",
-            border: "1px solid #30363D",
-            background: "#0D1117",
-            color: "#F0F6FC",
-          }}
-        />
+            <label style={labelStyleAuth}>Password</label>
+            <input
+              type="password"
+              value={regPassword}
+              onChange={(e) => setRegPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              required
+              minLength={8}
+              maxLength={128}
+              autoComplete="new-password"
+              style={inputStyle}
+            />
+
+            <label style={labelStyleAuth}>Confirm password</label>
+            <input
+              type="password"
+              value={regConfirm}
+              onChange={(e) => setRegConfirm(e.target.value)}
+              placeholder="Re-enter your password"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              style={inputStyle}
+            />
+          </>
+        )}
+
+        {!isRegister && (
+          <>
+            <label style={labelStyleAuth}>Username</label>
+            <input
+              value={loginUsername}
+              onChange={(e) => setLoginUsername(e.target.value)}
+              placeholder="Enter your username"
+              required
+              autoComplete="username"
+              style={inputStyle}
+            />
+
+            <label style={labelStyleAuth}>Password</label>
+            <input
+              type="password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              placeholder="Enter your password"
+              required
+              autoComplete="current-password"
+              style={inputStyle}
+            />
+          </>
+        )}
+
+        {authNotice && (
+          <p style={{ color: "#3FB950", fontSize: "13px" }}>{authNotice}</p>
+        )}
 
         {loginError && (
           <p style={{ color: "#F85149", fontSize: "13px" }}>
@@ -1469,8 +1612,29 @@ ${(report.recommended_next_actions || []).map(item =>
             cursor: "pointer",
           }}
         >
-          {loginLoading ? "Signing in..." : "Sign In"}
+          {loginLoading
+            ? isRegister ? "Creating account..." : "Signing in..."
+            : isRegister ? "Create Account" : "Sign In"}
         </button>
+
+        <p
+          style={{
+            color: "#8B949E",
+            fontSize: "14px",
+            textAlign: "center",
+            marginTop: "20px",
+            marginBottom: 0,
+          }}
+        >
+          {isRegister ? "Already have an account? " : "Don't have an account? "}
+          <button
+            type="button"
+            style={linkBtnStyle}
+            onClick={() => switchAuthMode(isRegister ? "login" : "register")}
+          >
+            {isRegister ? "Sign in" : "Create account"}
+          </button>
+        </p>
       </form>
     </div>
   );
