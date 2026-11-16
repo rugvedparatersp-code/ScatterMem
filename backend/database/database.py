@@ -85,6 +85,31 @@ def initialize_database():
         )
     """)
 
+
+    # 6. ROLELENS: User accounts and roles
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            full_name TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'Developer',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+
+        # Memory Pulse: add document verification tracking
+    cursor.execute("PRAGMA table_info(documents)")
+    columns = [column[1] for column in cursor.fetchall()]
+
+    if "last_verified_at" not in columns:
+        cursor.execute(
+            "ALTER TABLE documents ADD COLUMN last_verified_at TEXT"
+        )
+
     connection.commit()
     connection.close()
 
@@ -372,3 +397,129 @@ def get_all_decisions():
 
     connection.close()
     return [dict(row) for row in rows]
+
+def verify_document(document_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE documents
+        SET last_verified_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (document_id,)
+    )
+
+    updated = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return updated > 0
+
+
+def create_user(username, email, password_hash, full_name, role="Developer"):
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO users (username, email, password_hash, full_name, role)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (username, email, password_hash, full_name, role)
+    )
+
+    user_id = cursor.lastrowid
+    connection.commit()
+    connection.close()
+    return user_id
+
+
+def get_user_by_username(username):
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT * FROM users WHERE username = ?",
+        (username,)
+    )
+
+    user = cursor.fetchone()
+    connection.close()
+    return dict(user) if user else None
+
+
+def get_user_by_email(email):
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT * FROM users WHERE email = ?",
+        (email,)
+    )
+
+    user = cursor.fetchone()
+    connection.close()
+    return dict(user) if user else None
+
+
+def get_user_by_id(user_id):
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "SELECT * FROM users WHERE id = ?",
+        (user_id,)
+    )
+
+    user = cursor.fetchone()
+    connection.close()
+    return dict(user) if user else None
+
+
+def get_all_users():
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, username, email, full_name, role, is_active, created_at
+        FROM users
+        ORDER BY created_at DESC
+        """
+    )
+
+    users = [dict(row) for row in cursor.fetchall()]
+    connection.close()
+    return users
+
+
+def update_user_role(user_id, role):
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "UPDATE users SET role = ? WHERE id = ?",
+        (role, user_id)
+    )
+
+    updated = cursor.rowcount > 0
+    connection.commit()
+    connection.close()
+    return updated
+
+
+def update_user_status(user_id, is_active):
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        "UPDATE users SET is_active = ? WHERE id = ?",
+        (1 if is_active else 0, user_id)
+    )
+
+    updated = cursor.rowcount > 0
+    connection.commit()
+    connection.close()
+    return updated

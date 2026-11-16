@@ -1,6 +1,8 @@
 
 import { useEffect, useState } from "react";
 import "./App.css";
+import NexusMap from "./NexusMap";
+import MemoryPulse from "./MemoryPulse";
 
 const API = "http://127.0.0.1:8000";
 
@@ -152,6 +154,17 @@ function Insight({ icon, title, onClick }) {
 
 function App() {
   const [activeTab, setActiveTab] = useState("Overview");
+  const [showWelcome, setShowWelcome] = useState(true);
+  // ROLELENS AUTHENTICATION
+const [token, setToken] = useState(
+  () => localStorage.getItem("scattermem_token") || ""
+);
+
+const [currentUser, setCurrentUser] = useState(null);
+const [loginUsername, setLoginUsername] = useState("");
+const [loginPassword, setLoginPassword] = useState("");
+const [loginError, setLoginError] = useState("");
+const [loginLoading, setLoginLoading] = useState(false);
 
   const [file, setFile] = useState(null);
   const [documents, setDocuments] = useState([]);
@@ -190,8 +203,11 @@ function App() {
     title:"", decision:"", reasoning:"", evidence:"", impact:"", decided_by:""
   });
 
-  const menuItems = [
+ 
+const menuItems = [
     { name:"Overview", icon:"▦" },
+    { name: "NEXUS MAP", icon: "✧" },
+    { name: "MEMORY PULSE", icon: "◈" },
     { name:"Documents", icon:"▤" },
     { name:"Knowledge Base", icon:"◇" },
     { name:"Human Review", icon:"✓" },
@@ -200,7 +216,7 @@ function App() {
     { name:"Risks & Issues", icon:"△" },
     { name:"Handover Test Drive", icon:"◉" },
     { name:"Handover Report", icon:"▧" },
-  ];
+];
 
   const fieldStyle = {
     width:"100%", padding:"11px 12px", borderRadius:"7px",
@@ -241,14 +257,30 @@ function App() {
     setError("");
   }
 
-  async function apiRequest(path, options = {}) {
-    const response = await fetch(`${API}${path}`, options);
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(data.detail || "The request could not be completed.");
-    }
-    return data;
+  
+async function apiRequest(path, options = {}) {
+  const headers = {
+    ...(options.headers || {}),
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
   }
+
+  const response = await fetch(`${API}${path}`, {
+    ...options,
+    headers,
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.detail || "The request could not be completed.");
+  }
+
+  return data;
+}
+
 
   // LOAD DATA
 
@@ -290,10 +322,64 @@ function App() {
     }
   }
 
-  useEffect(() => {
-    loadAllData();
-  }, []);
+ async function handleLogin(event) {
+  event.preventDefault();
+  setLoginLoading(true);
+  setLoginError("");
 
+  try {
+    const response = await fetch(`${API}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        username: loginUsername.trim(),
+        password: loginPassword,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Login failed.");
+    }
+
+    localStorage.setItem("scattermem_token", data.access_token);
+    setToken(data.access_token);
+    setCurrentUser(data.user);
+    setLoginPassword("");
+  } catch (err) {
+    setLoginError(err.message);
+  } finally {
+    setLoginLoading(false);
+  }
+}
+
+function handleLogout() {
+  localStorage.removeItem("scattermem_token");
+  setToken("");
+  setCurrentUser(null);
+}
+
+useEffect(() => {
+  if (!token) return;
+
+  async function restoreSession() {
+    try {
+      const data = await apiRequest("/api/auth/me");
+      setCurrentUser(data.user);
+      await loadAllData();
+    } catch (err) {
+      localStorage.removeItem("scattermem_token");
+      setToken("");
+      setCurrentUser(null);
+      setLoginError("Your session expired. Please log in again.");
+    }
+  }
+
+  restoreSession();
+}, [token]);
   // DOCUMENT UPLOAD
 
   async function uploadDocument() {
@@ -1272,7 +1358,123 @@ ${(report.recommended_next_actions || []).map(item =>
 
   // MAIN DASHBOARD
 
+  if (showWelcome) {
   return (
+    <div className="welcome-screen">
+      <div className="welcome-content">
+        <h1 className="welcome-title">✦ ScatterMem</h1>
+        <p className="welcome-subtitle">
+          Your team's knowledge. Connected. Preserved.
+        </p>
+        <button
+          className="get-started-btn"
+          onClick={() => setShowWelcome(false)}
+        >
+          Get Started →
+        </button>
+      </div>
+    </div>
+  );
+}if (!token || !currentUser) {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        background: "#0D1117",
+        padding: "24px",
+      }}
+    >
+      <form
+        onSubmit={handleLogin}
+        style={{
+          width: "100%",
+          maxWidth: "420px",
+          background: "#161B22",
+          border: "1px solid #30363D",
+          borderRadius: "14px",
+          padding: "32px",
+          boxSizing: "border-box",
+        }}
+      >
+        <h1 style={{ color: "#F0F6FC", margin: "0 0 8px" }}>
+          ✦ ScatterMem
+        </h1>
+
+        <p style={{ color: "#8B949E", marginBottom: "28px" }}>
+          Sign in to access your workspace.
+        </p>
+
+        <label style={{ color: "#C9D1D9", display: "block", marginBottom: "8px" }}>
+          Username
+        </label>
+
+        <input
+          value={loginUsername}
+          onChange={(e) => setLoginUsername(e.target.value)}
+          placeholder="Enter your username"
+          required
+          style={{
+            width: "100%",
+            padding: "12px",
+            marginBottom: "18px",
+            boxSizing: "border-box",
+            borderRadius: "8px",
+            border: "1px solid #30363D",
+            background: "#0D1117",
+            color: "#F0F6FC",
+          }}
+        />
+
+        <label style={{ color: "#C9D1D9", display: "block", marginBottom: "8px" }}>
+          Password
+        </label>
+
+        <input
+          type="password"
+          value={loginPassword}
+          onChange={(e) => setLoginPassword(e.target.value)}
+          placeholder="Enter your password"
+          required
+          style={{
+            width: "100%",
+            padding: "12px",
+            marginBottom: "18px",
+            boxSizing: "border-box",
+            borderRadius: "8px",
+            border: "1px solid #30363D",
+            background: "#0D1117",
+            color: "#F0F6FC",
+          }}
+        />
+
+        {loginError && (
+          <p style={{ color: "#F85149", fontSize: "13px" }}>
+            {loginError}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={loginLoading}
+          style={{
+            width: "100%",
+            padding: "12px",
+            border: "none",
+            borderRadius: "8px",
+            background: "#7657E8",
+            color: "white",
+            fontWeight: "600",
+            cursor: "pointer",
+          }}
+        >
+          {loginLoading ? "Signing in..." : "Sign In"}
+        </button>
+      </form>
+    </div>
+  );
+}return (
     <div className="app-layout">
       <aside className="sidebar">
         <div className="brand"><div className="brand-icon"><ScatterMark /></div><div><h2>ScatterMem</h2><span>Knowledge Handover</span></div></div>
@@ -1288,7 +1490,29 @@ ${(report.recommended_next_actions || []).map(item =>
       </aside>
 
       <main className="main-content">
-        <header className="topbar"><div><span className="breadcrumb">Workspace / </span><strong>{activeTab}</strong></div><div className="avatar">U</div></header>
+        <header className="topbar">
+  <div>
+    <span className="breadcrumb">Workspace / </span>
+    <strong>{activeTab}</strong>
+  </div>
+
+  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+    <div style={{ textAlign: "right" }}>
+      <strong style={{ display: "block", fontSize: "13px" }}>
+        {currentUser?.full_name || currentUser?.username}
+      </strong>
+      <span style={{ fontSize: "11px", color: "#8B949E" }}>
+        {currentUser?.role}
+      </span>
+    </div>
+
+    <div className="avatar">
+      {(currentUser?.full_name || "U").charAt(0).toUpperCase()}
+    </div>
+
+    <button onClick={handleLogout}>Logout</button>
+  </div>
+</header>
         <section className="page-content">
           {message && <div style={{background:"#12261A",border:"1px solid #238636",color:"#3FB950",padding:"12px 15px",borderRadius:"7px",marginBottom:"18px"}}>{message}</div>}
           {error && <div style={{background:"#2D1618",border:"1px solid #F85149",color:"#FF7B72",padding:"12px 15px",borderRadius:"7px",marginBottom:"18px"}}>{error}</div>}
@@ -1301,6 +1525,8 @@ ${(report.recommended_next_actions || []).map(item =>
           {activeTab==="Risks & Issues" && renderRisksPage()}
           {activeTab==="Handover Test Drive" && renderHandoverTestDrivePage()}
           {activeTab==="Handover Report" && renderHandoverReportPage()}
+          {activeTab==="NEXUS MAP" && <NexusMap token={token} />}
+          {activeTab==="MEMORY PULSE" && <MemoryPulse apiRequest={apiRequest} />}
 
           {activeTab==="Overview" && <>
             <div className="welcome-section">
